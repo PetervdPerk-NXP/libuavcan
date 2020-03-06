@@ -85,8 +85,8 @@ class UAVCAN_EXPORT OutgoingTransferRegistry : Noncopyable
             const bool expired = value.deadline <= ts_;
             if (expired)
             {
-                UAVCAN_TRACE("OutgoingTransferRegistry", "Expired %s tid=%i",
-                             key.toString().c_str(), int(value.tid.get()));
+                /*UAVCAN_TRACE("OutgoingTransferRegistry", "Expired %s tid=%i",
+                             key.toString().c_str(), int(value.tid.get()));*/
             }
             return expired;
         }

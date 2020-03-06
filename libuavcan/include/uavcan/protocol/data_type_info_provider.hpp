@@ -70,7 +70,7 @@ class UAVCAN_EXPORT DataTypeInfoProvider : Noncopyable
             return;
         }
 
-        UAVCAN_TRACE("DataTypeInfoProvider", "GetDataTypeInfo request for %s", desc->toString().c_str());
+        /*UAVCAN_TRACE("DataTypeInfoProvider", "GetDataTypeInfo request for %s", desc->toString().c_str());*/
 
         /*
          * Filling the response struct

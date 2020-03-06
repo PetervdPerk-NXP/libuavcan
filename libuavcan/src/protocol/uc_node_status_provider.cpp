@@ -20,6 +20,8 @@ int NodeStatusProvider::publish()
     const MonotonicDuration uptime = getNode().getMonotonicTime() - creation_timestamp_;
     UAVCAN_ASSERT(uptime.isPositive());
     node_info_.status.uptime_sec = uint32_t(uptime.toMSec() / 1000);
+    
+    printf("NodeStatus Uptime sec %d\r\n", node_info_.status.uptime_sec);
 
     UAVCAN_ASSERT(node_info_.status.health <= protocol::NodeStatus::FieldTypes::health::max());
 
@@ -105,8 +107,8 @@ void NodeStatusProvider::setStatusPublicationPeriod(uavcan::MonotonicDuration pe
     const MonotonicDuration tx_timeout = period - MonotonicDuration::fromUSec(period.toUSec() / 20);
     node_status_pub_.setTxTimeout(tx_timeout);
 
-    UAVCAN_TRACE("NodeStatusProvider", "Status pub period: %s, TX timeout: %s",
-                 period.toString().c_str(), node_status_pub_.getTxTimeout().toString().c_str());
+    /*UAVCAN_TRACE("NodeStatusProvider", "Status pub period: %s, TX timeout: %s",
+                 period.toString().c_str(), node_status_pub_.getTxTimeout().toString().c_str());*/
 }
 
 uavcan::MonotonicDuration NodeStatusProvider::getStatusPublicationPeriod() const

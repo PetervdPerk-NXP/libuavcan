@@ -5,6 +5,7 @@
 #ifndef UAVCAN_UTIL_TEMPLATES_HPP_INCLUDED
 #define UAVCAN_UTIL_TEMPLATES_HPP_INCLUDED
 
+#include <ctype.h>
 #include <climits>
 #include <cstddef>
 #include <cmath>
@@ -500,7 +501,7 @@ struct UAVCAN_EXPORT NumericTraits<long double>
 template <typename T>
 inline bool isNaN(T arg)
 {
-#if UAVCAN_CPP_VERSION >= UAVCAN_CPP11
+#if UAVCAN_CPP_VERSION >= UAVCAN_CPP14
     return std::isnan(arg);
 #else
     // coverity[same_on_both_sides : FALSE]
@@ -516,7 +517,7 @@ inline bool isNaN(T arg)
 template <typename T>
 inline bool isInfinity(T arg)
 {
-#if UAVCAN_CPP_VERSION >= UAVCAN_CPP11
+#if UAVCAN_CPP_VERSION >= UAVCAN_CPP14
     return std::isinf(arg);
 #else
     return (arg >= NumericTraits<T>::infinity()) || (arg <= -NumericTraits<T>::infinity());
@@ -530,7 +531,7 @@ inline bool isInfinity(T arg)
 template <typename T>
 inline bool isFinite(T arg)
 {
-#if UAVCAN_CPP_VERSION >= UAVCAN_CPP11
+#if UAVCAN_CPP_VERSION >= UAVCAN_CPP14
     return std::isfinite(arg);
 #else
     return !isNaN(arg) && !isInfinity(arg);
@@ -544,7 +545,7 @@ inline bool isFinite(T arg)
 template <typename T>
 inline bool getSignBit(T arg)
 {
-#if UAVCAN_CPP_VERSION >= UAVCAN_CPP11
+#if UAVCAN_CPP_VERSION >= UAVCAN_CPP14
     return std::signbit(arg);
 #else
     // coverity[divide_by_zero : FALSE]
