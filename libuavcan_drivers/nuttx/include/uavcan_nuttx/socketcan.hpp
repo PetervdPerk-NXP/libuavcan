@@ -35,16 +35,7 @@
 //#define CAN_EFF_MASK 0x1FFFFFFFU /* extended frame format (EFF) */
 //#define CAN_ERR_MASK 0x1FFFFFFFU /* omit EFF, RTR, ERR flags */
 /*
-static const struct zcan_filter zfilter = {
-	.id_type = CAN_EXTENDED_IDENTIFIER,
-	.rtr = CAN_DATAFRAME,
-	.std_id = 0x1,
-	.rtr_mask = 0,
-	.std_id_mask = 0
-};*/
-
-static struct can_filter filter;
-
+*/
 
 
 namespace uavcan_nuttx
@@ -236,25 +227,50 @@ class SocketCanIface : public uavcan::ICanIface
      */
     int read(uavcan::CanFrame& frame, uavcan::UtcTime& ts_utc, bool& loopback) const
     {
-        struct sockaddr_can can_addr;
-        socklen_t addr_len;
+        auto iov = ::iovec();
+        auto sockcan_frame = ::can_frame();
+        iov.iov_base = &sockcan_frame;
+        iov.iov_len  = sizeof(sockcan_frame);
 
-        struct can_frame receive_frame;
+        static constexpr size_t ControlSize = sizeof(cmsghdr) + sizeof(::timeval);
+        using ControlStorage = typename std::aligned_storage<ControlSize>::type;
+        ControlStorage control_storage;
+        auto control = reinterpret_cast<std::uint8_t *>(&control_storage);
+        std::fill(control, control + ControlSize, 0x00);
 
-        memset(&receive_frame, 0, sizeof(receive_frame));
-        addr_len = sizeof(can_addr);
+        auto msg = ::msghdr();
+        msg.msg_iov    = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = control;
+        msg.msg_controllen = ControlSize;
 
-        const ssize_t nbytes = recvfrom(fd_, &receive_frame, sizeof(struct can_frame),
-            		                        0, (struct sockaddr *)&can_addr, &addr_len);
+        const int nbytes = ::recvmsg(fd_, &msg, MSG_DONTWAIT);
         if (nbytes <= 0)
         {
             return (nbytes < 0 && errno == EWOULDBLOCK) ? 0 : nbytes;
         }
 
-        frame = makeUavcanFrame(receive_frame);
+        frame = makeUavcanFrame(sockcan_frame);
         
-        ts_utc = uavcan::UtcTime::fromUSec(clock_.getMonotonic().toUSec()); /* FIXME */
+        /*
+         * Timestamp
+         */
+        const ::cmsghdr* const cmsg = CMSG_FIRSTHDR(&msg);
+        assert(cmsg != nullptr);
+        if (cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SO_TIMESTAMP)
+        {
+            auto tv = ::timeval();
+            (void)std::memcpy(&tv, CMSG_DATA(cmsg), sizeof(tv));  // Copy to avoid alignment problems
+            assert(tv.tv_sec >= 0 && tv.tv_usec >= 0);
+            ts_utc = uavcan::UtcTime::fromUSec(std::uint64_t(tv.tv_sec) * 1000000ULL + tv.tv_usec);
+        }
 
+#ifdef TEST_SOCKETCAN_SW_LATENCY
+        uavcan::MonotonicTime now = clock_.getMonotonic();
+        std::cout << "SO_TIMESTAMP packet " << ts_utc.toUSec() << std::endl;
+        std::cout << "Now                 " << now.toUSec() << std::endl;
+        std::cout << "Diff                " << now.toUSec() - ts_utc.toUSec() << std::endl;
+#endif
 
         return 1;
     }
@@ -557,22 +573,17 @@ public:
         // Configure
         {
             const int on = 1;
-            // Timestamping UNSUPPORTED in Zephyr SocketCAN
-            /*if (setsockopt(s, SOL_SOCKET, SO_TIMESTAMP, &on, sizeof(on)) < 0)
+            // Timestamping UNSUPPORTED in NuttX SocketCAN
+            if (setsockopt(s, SOL_SOCKET, SO_TIMESTAMP, &on, sizeof(on)) < 0)
             {
                 return -1;
-            }*/
-            // Socket loopback UNSUPPORTED in Zephyr SocketCAN
+            }
+            // Socket loopback UNSUPPORTED in NuttX SocketCAN
             /*if (setsockopt(s, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS, &on, sizeof(on)) < 0)
             {
                 return -1;
             }*/
-            // CAN filter
-            /*if (setsockopt(s, SOL_CAN_RAW, CAN_RAW_FILTER, &filter, sizeof(filter)) < 0)
-            {
-            	return -1;
-            }
-            */
+
             if (::fcntl(s, F_SETFL, O_NONBLOCK) < 0)
             {
                 return -1;
