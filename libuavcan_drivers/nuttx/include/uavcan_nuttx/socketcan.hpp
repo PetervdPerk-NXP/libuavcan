@@ -196,13 +196,36 @@ class SocketCanIface : public uavcan::ICanIface
         return false;
     }
 
-    int write(const uavcan::CanFrame& frame) const
+    int write(const uavcan::CanFrame& frame, const uavcan::MonotonicTime& tx_deadline) const
     {
         errno = 0;
 
-        const ::can_frame sockcan_frame = makeSocketCanFrame(frame);
+        auto iov = ::iovec();
+        ::can_frame sockcan_frame = makeSocketCanFrame(frame);
+        iov.iov_base = &sockcan_frame;
+        iov.iov_len  = sizeof(sockcan_frame);
 
-        const int res = ::write(fd_, &sockcan_frame, sizeof(sockcan_frame));
+        static constexpr size_t ControlSize = sizeof(cmsghdr) + sizeof(::timeval);
+        using ControlStorage = typename std::aligned_storage<ControlSize>::type;
+        ControlStorage control_storage;
+        auto control = reinterpret_cast<std::uint8_t *>(&control_storage);
+        std::fill(control, control + ControlSize, 0x00);
+
+        auto msg = ::msghdr();
+        msg.msg_iov    = &iov;
+        msg.msg_iovlen = 1;
+        msg.msg_control = control;
+        msg.msg_controllen = ControlSize;
+
+        ::cmsghdr* const cmsg = CMSG_FIRSTHDR(&msg);
+		cmsg->cmsg_level = SOL_CAN_RAW;
+        cmsg->cmsg_type = CAN_RAW_TX_DEADLINE;
+        cmsg->cmsg_len = sizeof(struct timeval);
+        struct timeval *tv = (struct timeval*)CMSG_DATA(cmsg);
+        tv->tv_usec = tx_deadline.toUSec() % 1000000ULL;
+        tv->tv_sec = (tx_deadline.toUSec() - tv->tv_usec) / 1000000ULL;
+
+        const int res = ::sendmsg(fd_, &msg, 0);
         if (res <= 0)
         {
             if (errno == ENOBUFS || errno == EAGAIN)    // Writing is not possible atm, not an error
@@ -264,7 +287,7 @@ class SocketCanIface : public uavcan::ICanIface
             assert(tv.tv_sec >= 0 && tv.tv_usec >= 0);
             ts_utc = uavcan::UtcTime::fromUSec(std::uint64_t(tv.tv_sec) * 1000000ULL + tv.tv_usec);
         }
-
+//#define TEST_SOCKETCAN_SW_LATENCY
 #ifdef TEST_SOCKETCAN_SW_LATENCY
         uavcan::MonotonicTime now = clock_.getMonotonic();
         std::cout << "SO_TIMESTAMP packet " << ts_utc.toUSec() << std::endl;
@@ -284,7 +307,7 @@ class SocketCanIface : public uavcan::ICanIface
         	//std::cout << "TX " << tx.frame.id << " Time: " << clock_.getMonotonic().toUSec() << " deadline: " << tx.deadline.toUSec() << std::endl;
             if (tx.deadline >= clock_.getMonotonic())
             {
-                const int res = write(tx.frame);
+                const int res = write(tx.frame, tx.deadline);
                 if (res == 1)                   // Transmitted successfully
                 {
                     //incrementNumFramesInSocketTxQueue(); //FIXME
@@ -583,6 +606,11 @@ public:
             {
                 return -1;
             }*/
+
+            if (setsockopt(s, SOL_CAN_RAW, CAN_RAW_TX_DEADLINE, &on, sizeof(on)) < 0)
+            {
+                return -1;
+            }
 
             if (::fcntl(s, F_SETFL, O_NONBLOCK) < 0)
             {
